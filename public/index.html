@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Email Blasting App</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  .card { border: 1px solid #ccc; padding: 20px; margin-bottom: 20px; border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th, td { border: 1px solid #ccc; padding: 5px; text-align: left; }
+  select, input, textarea { width: 100%; padding: 5px; margin-bottom: 10px; }
+  button { padding: 8px 12px; margin-top: 10px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<h1>Email Blasting App</h1>
+
+<!-- Step 1: Upload File -->
+<div class="card">
+  <h3>Step 1: Upload File</h3>
+  <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+  <p id="fileName"></p>
+</div>
+
+<!-- Step 2: Select Sheet -->
+<div class="card" id="sheetCard" style="display:none;">
+  <h3>Step 2: Select Sheet</h3>
+  <select id="sheetSelect"></select>
+</div>
+
+<!-- Step 3: Map Columns and Email Prompt -->
+<div class="card" id="mappingCard" style="display:none;">
+  <h3>Step 3: Map Columns</h3>
+  <label>Name Column *</label>
+  <select id="nameColumn"></select>
+  <label>Company Column</label>
+  <select id="companyColumn"></select>
+  <label>Email Column *</label>
+  <select id="emailColumn"></select>
+  <label>Subject</label>
+   <input type="text" id="Subject" placeholder="Enter your Subject for emails">
+  <label>Email Template Prompt *</label>
+  <input type="text" id="emailPrompt" placeholder="Enter how you want the email to look">
+  <button id="generateTemplateBtn">Generate Template</button>
+</div>
+
+<!-- Step 3b: Generated Editable Template -->
+<div class="card" id="templateCard" style="display:none;">
+  <h3>Step 3b: Generated Email Template (Editable)</h3>
+  <textarea id="emailTemplate" style="height:150px;"></textarea>
+</div>
+
+<!-- Step 4: Preview Data -->
+<div class="card" id="previewCard" style="display:none;">
+  <h3>Step 4: Preview Data</h3>
+
+  <label for="rowFilter">Select rows by index (e.g., 0,2,5-7):</label>
+  <input type="text" id="rowFilter" placeholder="Enter indexes">
+  <button onclick="applyRowFilter()">Apply</button>
+
+  <table id="previewTable">
+    <thead>
+      <tr>
+        <th>Select</th>
+        <th>Row</th>
+        <th>Name</th>
+        <th>Company</th>
+        <th>Email</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <button id="generateBtn">Generate Emails</button>
+</div>
+
+<!-- Live Email Preview -->
+<div class="card">
+  <h3>Email Preview</h3>
+  <div id="emailPreviewBox" style="border:1px solid #ccc; padding:10px;"></div>
+</div>
+
+<!-- Step 5: SMTP Credentials -->
+<div class="card">
+  <h3>Step 5: Enter SMTP Credentials</h3>
+  <label>SMTP Email *</label>
+  <input type="email" id="smtpEmail" placeholder="Enter your SMTP email" required>
+  <label>SMTP Password *</label>
+  <input type="password" id="smtpPassword" placeholder="Enter your SMTP password" required>
+</div>
+
+<!-- Step 6: API Response -->
+<div class="card" id="responseCard" style="display:none;">
+  <h3>API Response</h3>
+  <pre id="apiResponse"></pre>
+</div>
+
+<script>
+let workbook, sheetData = [], columnMapping = {name:'', company:'', email:''};
+
+// Step 1: Upload File
+document.getElementById('fileInput').addEventListener('change', function(e){
+  const file = e.target.files[0];
+  if (!file) return;
+  document.getElementById('fileName').textContent = file.name;
+
+  const reader = new FileReader();
+  reader.onload = function(evt){
+    const data = evt.target.result;
+    workbook = XLSX.read(data, {type:'binary'});
+    const sheetSelect = document.getElementById('sheetSelect');
+    sheetSelect.innerHTML = '';
+    workbook.SheetNames.forEach(name=>{
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      sheetSelect.appendChild(option);
+    });
+    document.getElementById('sheetCard').style.display = 'block';
+    loadSheet(workbook.SheetNames[0]);
+  };
+  reader.readAsBinaryString(file);
+});
+
+// Step 2: Select Sheet
+document.getElementById('sheetSelect').addEventListener('change', function(e){
+  loadSheet(e.target.value);
+});
+
+function loadSheet(sheetName){
+  const ws = workbook.Sheets[sheetName];
+  const data = XLSX.utils.sheet_to_json(ws, {header:1});
+  sheetData = data.filter(row => row.some(cell => cell !== null && cell !== undefined && cell !== ''));
+  columnMapping = {name:'', company:'', email:''};
+  populateMapping();
+  document.getElementById('mappingCard').style.display = 'block';
+  document.getElementById('templateCard').style.display = 'none';
+  document.getElementById('previewCard').style.display = 'none';
+  document.getElementById('responseCard').style.display = 'none';
+}
+
+// Populate column mapping
+function populateMapping(){
+  const columns = sheetData[0].map((val,i)=>({label: val || `Column ${i+1}`, index:i}));
+  ['nameColumn','companyColumn','emailColumn'].forEach(id=>{
+    const select = document.getElementById(id);
+    select.innerHTML = '<option value="">Select Column</option>';
+    columns.forEach(col=>{
+      const option = document.createElement('option');
+      option.value = col.index;
+      option.textContent = col.label;
+      select.appendChild(option);
+    });
+  });
+}
+
+// Column mapping change
+['nameColumn','companyColumn','emailColumn'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', function(e){
+    const field = id==='nameColumn'?'name':id==='companyColumn'?'company':'email';
+    columnMapping[field] = e.target.value;
+    updatePreview();
+  });
+});
+
+// Update Preview
+function updatePreview(){
+  if(!sheetData.length) return;
+  const tbody = document.querySelector('#previewTable tbody');
+  tbody.innerHTML = '';
+
+  if(!columnMapping.name || !columnMapping.email) return;
+
+  const validRows = sheetData.slice(1).filter(row => {
+    const email = columnMapping.email !== '' ? row[columnMapping.email] : '';
+    const name = columnMapping.name !== '' ? row[columnMapping.name] : '';
+    const company = columnMapping.company !== '' ? row[columnMapping.company] : '';
+    return email && email.includes('@') && name && company;
+  });
+
+  validRows.forEach((row,i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="checkbox" class="rowCheck" data-index="${i}" checked></td>
+      <td>${i}</td>
+      <td>${row[columnMapping.name]}</td>
+      <td>${row[columnMapping.company]}</td>
+      <td>${row[columnMapping.email]}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('previewCard').style.display = validRows.length > 0 ? 'block' : 'none';
+}
+
+// Apply row filter
+function applyRowFilter(){
+  const filterInput = document.getElementById('rowFilter').value.trim();
+  if (!filterInput) return;
+
+  const indices = new Set();
+  filterInput.split(',').forEach(part=>{
+    if (part.includes('-')) {
+      const [start, end] = part.split('-').map(Number);
+      for (let i = start; i <= end; i++) indices.add(i);
+    } else {
+      indices.add(Number(part));
+    }
+  });
+
+  document.querySelectorAll('.rowCheck').forEach(cb=>{
+    const idx = Number(cb.dataset.index);
+    cb.checked = indices.has(idx);
+  });
+}
+
+// Collect selected rows
+function getSelectedRows(){
+  const selected = [];
+  document.querySelectorAll("#previewTable tbody tr").forEach(tr=>{
+    const cb = tr.querySelector(".rowCheck");
+    if (cb && cb.checked) {
+      const cells = tr.querySelectorAll("td");
+      selected.push({
+        name: cells[2].innerText,
+        company: cells[3].innerText,
+        email: cells[4].innerText
+      });
+    }
+  });
+  return selected;
+}
+
+// Generate Template from prompt
+document.getElementById('generateTemplateBtn').addEventListener('click', async () => {
+  const emailPrompt = document.getElementById('emailPrompt').value.trim();
+  if(!emailPrompt){
+    alert('Please enter a prompt for the email template.');
+    return;
+  }
+  try {
+    const res = await fetch('/api/generate-template', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({prompt: emailPrompt})
+    });
+    const result = await res.json();
+    document.getElementById('templateCard').style.display = 'block';
+    document.getElementById('emailTemplate').value = result.template || '';
+    showEmailPreview(result.template || '');
+  } catch(err){
+    alert('Error generating template: ' + err.message);
+  }
+});
+
+// Generate Emails
+document.getElementById('generateBtn').addEventListener('click', async function(){
+  const smtpUser = document.getElementById('smtpEmail').value.trim();
+  const smtpPass = document.getElementById('smtpPassword').value.trim();
+  const Subject= document.getElementById('Subject').value.trim()
+  if(!smtpUser || !smtpPass){
+    alert('Please enter both SMTP email and password.');
+    return;
+  }
+
+  const mappedData = getSelectedRows();
+  if(!mappedData.length){
+    alert('No selected rows found.');
+    return;
+  }
+
+  const editedTemplate = document.getElementById('emailTemplate').value.trim();
+  if(!editedTemplate){
+    alert('Email template cannot be empty.');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/generate-emails', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        data: mappedData,
+        template: editedTemplate,
+        smtpUser,
+        smtpPass,
+        Subject: Subject
+      })
+    });
+    const result = await res.json();
+    document.getElementById('apiResponse').textContent = JSON.stringify(result,null,2);
+    document.getElementById('responseCard').style.display = 'block';
+  } catch(e){
+    alert('API Error: ' + e.message);
+  }
+});
+
+// Live preview
+function showEmailPreview(htmlContent){
+  document.getElementById("emailPreviewBox").innerHTML = htmlContent;
+}
+</script>
+
+</body>
+</html>
