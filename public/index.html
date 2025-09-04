@@ -303,6 +303,11 @@ document.getElementById('generateBtn').addEventListener('click', async function(
 function showEmailPreview(htmlContent){
   document.getElementById("emailPreviewBox").innerHTML = htmlContent;
 }
+
+document.getElementById('emailTemplate').addEventListener('input', function(){
+  showEmailPreview(this.value);
+});
+
 </script>
 
 </body>
