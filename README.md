@@ -8,7 +8,7 @@ A simple web application to streamline email campaigns. Users can import Excel/C
 - Upload Excel/CSV files for contact data
 - Choose columns (e.g., `Name`, `Email`, etc.) for personalized messages
 - Bulk send emails via SMTP
-- Built with **Next.js** for server-side routing
+- Built with Express for server-side routing
 - File parsing & processing with **Node.js**
 
 ---
