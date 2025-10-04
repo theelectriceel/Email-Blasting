@@ -14,8 +14,8 @@ A simple web application to streamline email campaigns. Users can import Excel/C
 ---
 
 ##  Tech Stack
-- **Frontend**: Next.js
-- **Backend**: Node.js (server routes)
+- **Frontend**: HTML, CSS , Javascript
+- **Backend**: Express (server routes)
 - **Email Service**: SMTP
 - **File Handling**: Node.js file system & CSV/Excel parsing
 
